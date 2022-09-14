@@ -260,6 +260,15 @@ class DataTrainingArguments:
             )
         },
     )
+    padding: str = field(
+        default="longest",
+        metadata={
+        "The strategy to pad sequences (according to the model's padding side and padding index) among:"
+        " * True or 'longest: Pad to the longest sequence in the batch (or no padding if only a single sequence if provided)."
+        " * 'max_length': Pad to a maximum length specified with the argument `max_length` or to the maximum acceptable input length for the model if that argument is not provided."
+        " * False` or 'do_not_pad' (default): No padding (i.e., can output a batch with sequences of different lengths)."
+        }
+    )
 
 
 @dataclass
@@ -689,7 +698,7 @@ def main():
         processor = Wav2Vec2Processor.from_pretrained(training_args.output_dir)
 
     # Instantiate custom data collator
-    data_collator = DataCollatorCTCWithPadding(processor=processor)
+    data_collator = DataCollatorCTCWithPadding(processor=processor, padding=data_args.padding)
 
     # Initialize Trainer
     trainer = Trainer(
