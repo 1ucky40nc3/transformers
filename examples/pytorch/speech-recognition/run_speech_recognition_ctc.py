@@ -263,11 +263,21 @@ class DataTrainingArguments:
     padding: str = field(
         default="longest",
         metadata={
-        "The strategy to pad sequences (according to the model's padding side and padding index) among:"
-        " * True or 'longest: Pad to the longest sequence in the batch (or no padding if only a single sequence if provided)."
-        " * 'max_length': Pad to a maximum length specified with the argument `max_length` or to the maximum acceptable input length for the model if that argument is not provided."
-        " * False` or 'do_not_pad' (default): No padding (i.e., can output a batch with sequences of different lengths)."
-        }
+            "help": (
+                "The strategy to pad sequences (according to the model's padding side and padding index) among:"
+                " * True or 'longest: Pad to the longest sequence in the batch (or no padding if only a single sequence if provided)."
+                " * 'max_length': Pad to a maximum length specified with the argument `max_length` or to the maximum acceptable input length for the model if that argument is not provided."
+                " * False` or 'do_not_pad' (default): No padding (i.e., can output a batch with sequences of different lengths)."   
+            )
+        },
+    )
+    max_seq_length_batch: Optional[int] = field(
+        default=None,
+        metadata={"help": "Maximum sequence length in the training batch. Has to be set if `padding`='max_length'"}
+    )
+    max_seq_length_labels: Optional[int] = field(
+        default=None,
+        metadata={"help": "Maximum sequence length in the training labels. Has to be set if `padding`='max_length'"}
     )
 
 
@@ -299,6 +309,8 @@ class DataCollatorCTCWithPadding:
 
     processor: AutoProcessor
     padding: Union[bool, str] = "longest"
+    max_length: Optional[int] = None
+    max_length_labels: Optional[int] = None
     pad_to_multiple_of: Optional[int] = None
     pad_to_multiple_of_labels: Optional[int] = None
 
@@ -311,6 +323,7 @@ class DataCollatorCTCWithPadding:
         batch = self.processor.pad(
             input_features,
             padding=self.padding,
+            max_length=self.max_length,
             pad_to_multiple_of=self.pad_to_multiple_of,
             return_tensors="pt",
         )
@@ -318,6 +331,7 @@ class DataCollatorCTCWithPadding:
         labels_batch = self.processor.pad(
             labels=label_features,
             padding=self.padding,
+            max_length=self.max_length_labels,
             pad_to_multiple_of=self.pad_to_multiple_of_labels,
             return_tensors="pt",
         )
@@ -698,7 +712,12 @@ def main():
         processor = Wav2Vec2Processor.from_pretrained(training_args.output_dir)
 
     # Instantiate custom data collator
-    data_collator = DataCollatorCTCWithPadding(processor=processor, padding=data_args.padding)
+    data_collator = DataCollatorCTCWithPadding(
+        processor=processor, 
+        padding=data_args.padding
+        max_length=data_args.max_seq_length_batch,
+        max_length_labels=data_args.max_seq_length_batch_labels
+    )
 
     # Initialize Trainer
     trainer = Trainer(
