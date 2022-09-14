@@ -716,7 +716,7 @@ def main():
         processor=processor, 
         padding=data_args.padding,
         max_length=data_args.max_seq_length_batch,
-        max_length_labels=data_args.max_seq_length_batch_labels
+        max_length_labels=data_args.max_seq_length_labels
     )
 
     # Initialize Trainer
