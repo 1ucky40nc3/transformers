@@ -61,8 +61,6 @@ from transformers.utils.versions import require_version
 check_min_version("4.22.0.dev0")
 
 logger = get_logger(__name__)
-handler = logging.StreamHandler(sys.stdout)
-logger.addHandler(handler)
 require_version("datasets>=1.8.0", "To fix: pip install -r examples/pytorch/language-modeling/requirements.txt")
 MODEL_CONFIG_CLASSES = list(MODEL_MAPPING.keys())
 MODEL_TYPES = tuple(conf.model_type for conf in MODEL_CONFIG_CLASSES)
