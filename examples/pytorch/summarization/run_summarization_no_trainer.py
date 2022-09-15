@@ -90,7 +90,7 @@ summarization_name_mapping = {
 }
 
 
-def parse_args():
+def parse_args(args=None):
     parser = argparse.ArgumentParser(description="Finetune a transformers model on a summarization task")
     parser.add_argument(
         "--dataset_name",
@@ -302,7 +302,7 @@ def parse_args():
             "Only applicable when `--with_tracking` is passed."
         ),
     )
-    args = parser.parse_args()
+    args = parser.parse_args(args=args)
 
     # Sanity checks
     if args.dataset_name is None and args.train_file is None and args.validation_file is None:
@@ -321,8 +321,9 @@ def parse_args():
     return args
 
 
-def main():
-    args = parse_args()
+def main(args=None):
+    if args is None:
+        args = parse_args()
     # Sending telemetry. Tracking the example usage helps us better allocate resources to maintain them. The
     # information sent is the one passed as arguments along with your Python/PyTorch versions.
     send_example_telemetry("run_summarization_no_trainer", args)
