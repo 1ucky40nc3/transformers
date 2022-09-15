@@ -66,7 +66,7 @@ MODEL_CONFIG_CLASSES = list(MODEL_MAPPING.keys())
 MODEL_TYPES = tuple(conf.model_type for conf in MODEL_CONFIG_CLASSES)
 
 
-def parse_args():
+def parse_args(args=None):
     parser = argparse.ArgumentParser(description="Finetune a transformers model on a Masked Language Modeling task")
     parser.add_argument(
         "--dataset_name",
@@ -180,8 +180,7 @@ def parse_args():
     )
     parser.add_argument(
         "--line_by_line",
-        type=bool,
-        default=False,
+        action="store_true",
         help="Whether distinct lines of text in the dataset are to be handled as distinct sequences.",
     )
     parser.add_argument(
@@ -228,7 +227,8 @@ def parse_args():
             "Only applicable when `--with_tracking` is passed."
         ),
     )
-    args = parser.parse_args()
+
+    args = parser.parse_args(args=args)
 
     # Sanity checks
     if args.dataset_name is None and args.train_file is None and args.validation_file is None:
@@ -249,7 +249,9 @@ def parse_args():
     return args
 
 
-def main(args):
+def main(args=None):
+    if args is None:
+        args = parse_args()
     # Sending telemetry. Tracking the example usage helps us better allocate resources to maintain them. The
     # information sent is the one passed as arguments along with your Python/PyTorch versions.
     send_example_telemetry("run_mlm_no_trainer", args)
@@ -711,5 +713,4 @@ def main(args):
 
 
 if __name__ == "__main__":
-    args = parse_args()
-    main(args)
+    main(parse_args())
