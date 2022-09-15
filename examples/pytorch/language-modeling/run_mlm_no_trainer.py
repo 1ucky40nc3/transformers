@@ -248,9 +248,7 @@ def parse_args():
     return args
 
 
-def main():
-    args = parse_args()
-
+def main(args):
     # Sending telemetry. Tracking the example usage helps us better allocate resources to maintain them. The
     # information sent is the one passed as arguments along with your Python/PyTorch versions.
     send_example_telemetry("run_mlm_no_trainer", args)
@@ -712,4 +710,5 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    args = parse_args()
+    main(args)
