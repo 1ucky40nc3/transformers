@@ -271,9 +271,9 @@ class DataTrainingArguments:
             )
         },
     )
-    max_seq_length_batch: Optional[int] = field(
+    max_seq_length_inputs: Optional[int] = field(
         default=None,
-        metadata={"help": "Maximum sequence length in the training batch. Has to be set if `padding`='max_length'"}
+        metadata={"help": "Maximum sequence length in the training inputs. Has to be set if `padding`='max_length'"}
     )
     max_seq_length_labels: Optional[int] = field(
         default=None,
@@ -715,7 +715,7 @@ def main():
     data_collator = DataCollatorCTCWithPadding(
         processor=processor, 
         padding=data_args.padding,
-        max_length=data_args.max_seq_length_batch,
+        max_length=data_args.max_seq_length_inputs,
         max_length_labels=data_args.max_seq_length_labels
     )
 
