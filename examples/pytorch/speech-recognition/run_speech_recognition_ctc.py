@@ -279,15 +279,6 @@ class DataTrainingArguments:
         default=None,
         metadata={"help": "Maximum sequence length in the training labels. Has to be set if `padding`='max_length'"}
     )
-    stream_dataset: bool = field(
-        default=False,
-        metadata={
-            "help": (
-                "Activate dataset streaming to work with large datasets" 
-                " (see https://huggingface.co/docs/datasets/stream)."
-            )
-        }
-    )
 
 
 @dataclass
@@ -456,8 +447,7 @@ def main():
             data_args.dataset_name,
             data_args.dataset_config_name,
             split=data_args.train_split_name,
-            use_auth_token=data_args.use_auth_token,
-            streamimg=data_args.stream_dataset
+            use_auth_token=data_args.use_auth_token
         )
 
         if data_args.audio_column_name not in raw_datasets["train"].column_names:
@@ -482,8 +472,7 @@ def main():
             data_args.dataset_name,
             data_args.dataset_config_name,
             split=data_args.eval_split_name,
-            use_auth_token=data_args.use_auth_token,
-            streaming=data_args.stream_dataset
+            use_auth_token=data_args.use_auth_token
         )
 
         if data_args.max_eval_samples is not None:
