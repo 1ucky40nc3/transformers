@@ -271,6 +271,17 @@ class DataTrainingArguments:
             )
         },
     )
+    padding_labels: str = field(
+        default="longest",
+        metadata={
+            "help": (
+                "The strategy to pad sequences (according to the model's padding side and padding index) among:"
+                " * True or 'longest: Pad to the longest sequence in the batch (or no padding if only a single sequence if provided)."
+                " * 'max_length': Pad to a maximum length specified with the argument `max_length` or to the maximum acceptable input length for the model if that argument is not provided."
+                " * False` or 'do_not_pad' (default): No padding (i.e., can output a batch with sequences of different lengths)."   
+            )
+        },
+    )
     max_seq_length_inputs: Optional[int] = field(
         default=None,
         metadata={"help": "Maximum sequence length in the training inputs. Has to be set if `padding`='max_length'"}
@@ -309,6 +320,7 @@ class DataCollatorCTCWithPadding:
 
     processor: AutoProcessor
     padding: Union[bool, str] = "longest"
+    padding_labels: Union[bool, str] = "longest"
     max_length: Optional[int] = None
     max_length_labels: Optional[int] = None
     pad_to_multiple_of: Optional[int] = None
@@ -330,7 +342,7 @@ class DataCollatorCTCWithPadding:
 
         labels_batch = self.processor.pad(
             labels=label_features,
-            padding=self.padding,
+            padding=self.padding_labels,
             max_length=self.max_length_labels,
             pad_to_multiple_of=self.pad_to_multiple_of_labels,
             return_tensors="pt",
