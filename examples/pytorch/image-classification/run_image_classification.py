@@ -166,7 +166,7 @@ class ModelArguments:
 
 def collate_fn(examples):
     pixel_values = torch.stack([example["pixel_values"] for example in examples])
-    labels = torch.tensor([example["labels"] for example in examples])
+    labels = torch.tensor([example["label"] for example in examples])
     return {"pixel_values": pixel_values, "labels": labels}
 
 
@@ -248,6 +248,7 @@ def main():
             task="image-classification",
         )
 
+
     # If we don't have a validation split, split off a percentage of train as validation.
     data_args.train_val_split = None if "validation" in dataset.keys() else data_args.train_val_split
     if isinstance(data_args.train_val_split, float) and data_args.train_val_split > 0.0:
@@ -257,7 +258,7 @@ def main():
 
     # Prepare label mappings.
     # We'll include these in the model's config to get human readable labels in the Inference API.
-    labels = dataset["train"].features["labels"].names
+    labels = dataset["train"].features["label"].names
     label2id, id2label = dict(), dict()
     for i, label in enumerate(labels):
         label2id[label] = str(i)
@@ -317,17 +318,17 @@ def main():
         ]
     )
 
-    def train_transforms(example_batch):
+    def train_transforms(example):
         """Apply _train_transforms across a batch."""
-        example_batch["pixel_values"] = [
-            _train_transforms(pil_img.convert("RGB")) for pil_img in example_batch["image"]
-        ]
-        return example_batch
+        example["pixel_values"] = _train_transforms(example["image"].convert("RGB"))
+        return example
 
-    def val_transforms(example_batch):
+    def val_transforms(example):
         """Apply _val_transforms across a batch."""
-        example_batch["pixel_values"] = [_val_transforms(pil_img.convert("RGB")) for pil_img in example_batch["image"]]
-        return example_batch
+        example["pixel_values"] = _val_transforms(example["image"].convert("RGB"))
+        return example
+
+    dataset = dataset.with_format("torch")
 
     if training_args.do_train:
         if "train" not in dataset:
@@ -337,7 +338,7 @@ def main():
                 dataset["train"].shuffle(seed=training_args.seed).select(range(data_args.max_train_samples))
             )
         # Set the training transforms
-        dataset["train"].set_transform(train_transforms)
+        dataset["train"] = dataset["train"].map(train_transforms)
 
     if training_args.do_eval:
         if "validation" not in dataset:
@@ -347,7 +348,7 @@ def main():
                 dataset["validation"].shuffle(seed=training_args.seed).select(range(data_args.max_eval_samples))
             )
         # Set the validation transforms
-        dataset["validation"].set_transform(val_transforms)
+        dataset["validation"] = dataset["validation"].map(val_transforms)
 
     # Initalize our trainer
     trainer = Trainer(
