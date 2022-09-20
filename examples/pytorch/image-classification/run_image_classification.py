@@ -109,12 +109,19 @@ class DataTrainingArguments:
             )
         },
     )
+    stream_dataset: bool = field(
+        default=False,
+        metadata={
+            "help": "Stream the dataset (see https://huggingface.co/docs/datasets/v2.4.0/en/stream#stream)."
+        }
+    )
 
     def __post_init__(self):
         if self.dataset_name is None and (self.train_dir is None and self.validation_dir is None):
             raise ValueError(
                 "You must specify either a dataset name from the hub or a train and/or validation directory."
             )
+
 
 
 @dataclass
@@ -226,6 +233,7 @@ def main():
             cache_dir=model_args.cache_dir,
             task="image-classification",
             use_auth_token=True if model_args.use_auth_token else None,
+            streaming=data_args.stream_dataset
         )
     else:
         data_files = {}
