@@ -45,6 +45,7 @@ from huggingface_hub.utils import (
     LocalEntryNotFoundError,
     RepositoryNotFoundError,
     RevisionNotFoundError,
+    hf_raise_for_status,
 )
 from requests.exceptions import HTTPError
 from transformers.utils.logging import tqdm
@@ -221,7 +222,7 @@ def extract_commit_hash(resolved_file: Optional[str], commit_hash: Optional[str]
     """
     if resolved_file is None or commit_hash is not None:
         return commit_hash
-
+    resolved_file = str(Path(resolved_file).as_posix())
     search = re.search(r"snapshots/([^/]+)/", resolved_file)
     if search is None:
         return None
@@ -435,7 +436,7 @@ def cached_file(
     except LocalEntryNotFoundError:
         # We try to see if we have a cached version (not up to date):
         resolved_file = try_to_load_from_cache(path_or_repo_id, full_filename, cache_dir=cache_dir, revision=revision)
-        if resolved_file is not None:
+        if resolved_file is not None and resolved_file != _CACHED_NO_EXIST:
             return resolved_file
         if not _raise_exceptions_for_missing_entries or not _raise_exceptions_for_connection_errors:
             return None
@@ -457,7 +458,7 @@ def cached_file(
     except HTTPError as err:
         # First we try to see if we have a cached version (not up to date):
         resolved_file = try_to_load_from_cache(path_or_repo_id, full_filename, cache_dir=cache_dir, revision=revision)
-        if resolved_file is not None:
+        if resolved_file is not None and resolved_file != _CACHED_NO_EXIST:
             return resolved_file
         if not _raise_exceptions_for_connection_errors:
             return None
@@ -607,7 +608,7 @@ def has_file(
 
     r = requests.head(url, headers=headers, allow_redirects=False, proxies=proxies, timeout=10)
     try:
-        huggingface_hub.utils._errors._raise_for_status(r)
+        hf_raise_for_status(r)
         return True
     except RepositoryNotFoundError as e:
         logger.error(e)
@@ -993,7 +994,7 @@ def get_hub_metadata(url, token=None):
     r = huggingface_hub.file_download._request_with_retry(
         method="HEAD", url=url, headers=headers, allow_redirects=False
     )
-    huggingface_hub.file_download._raise_for_status(r)
+    hf_raise_for_status(r)
     commit_hash = r.headers.get(HUGGINGFACE_HEADER_X_REPO_COMMIT)
     etag = r.headers.get(HUGGINGFACE_HEADER_X_LINKED_ETAG) or r.headers.get("ETag")
     if etag is not None:
@@ -1104,17 +1105,18 @@ else:
     with open(cache_version_file) as f:
         cache_version = int(f.read())
 
+cache_is_not_empty = os.path.isdir(TRANSFORMERS_CACHE) and len(os.listdir(TRANSFORMERS_CACHE)) > 0
 
-if cache_version < 1:
+if cache_version < 1 and cache_is_not_empty:
     if is_offline_mode():
-        logger.warn(
+        logger.warning(
             "You are offline and the cache for model files in Transformers v4.22.0 has been updated while your local "
             "cache seems to be the one of a previous version. It is very likely that all your calls to any "
             "`from_pretrained()` method will fail. Remove the offline mode and enable internet connection to have "
             "your cache be updated automatically, then you can go back to offline mode."
         )
     else:
-        logger.warn(
+        logger.warning(
             "The cache for model files in Transformers v4.22.0 has been updated. Migrating your old cache. This is a "
             "one-time only operation. You can interrupt this and resume the migration later on by calling "
             "`transformers.utils.move_cache()`."
@@ -1128,9 +1130,9 @@ if cache_version < 1:
     except Exception as e:
         trace = "\n".join(traceback.format_tb(e.__traceback__))
         logger.error(
-            f"There was a problem when trying to move your cache:\n\n{trace}\n\nPlease file an issue at "
-            "https://github.com/huggingface/transformers/issues/new/choose and copy paste this whole message and we "
-            "will do our best to help."
+            f"There was a problem when trying to move your cache:\n\n{trace}\n{e.__class__.__name__}: {e}\n\nPlease "
+            "file an issue at https://github.com/huggingface/transformers/issues/new/choose and copy paste this whole "
+            "message and we will do our best to help."
         )
 
     try:
@@ -1138,7 +1140,7 @@ if cache_version < 1:
         with open(cache_version_file, "w") as f:
             f.write("1")
     except Exception:
-        logger.warn(
+        logger.warning(
             f"There was a problem when trying to write in your cache folder ({TRANSFORMERS_CACHE}). You should set "
             "the environment variable TRANSFORMERS_CACHE to a writable directory."
         )

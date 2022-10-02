@@ -41,7 +41,7 @@ from ...file_utils import (
 )
 from ...modeling_outputs import BaseModelOutput
 from ...modeling_utils import PreTrainedModel
-from ...utils import logging
+from ...utils import is_ninja_available, logging
 from .configuration_deformable_detr import DeformableDetrConfig
 from .load_custom import load_cuda_kernels
 
@@ -49,9 +49,13 @@ from .load_custom import load_cuda_kernels
 logger = logging.get_logger(__name__)
 
 # Move this to not compile only when importing, this needs to happen later, like in __init__.
-if is_torch_cuda_available():
+if is_torch_cuda_available() and is_ninja_available():
     logger.info("Loading custom CUDA kernels...")
-    MultiScaleDeformableAttention = load_cuda_kernels()
+    try:
+        MultiScaleDeformableAttention = load_cuda_kernels()
+    except Exception as e:
+        logger.warning(f"Could not load the custom kernel for multi-scale deformable attention: {e}")
+        MultiScaleDeformableAttention = None
 else:
     MultiScaleDeformableAttention = None
 
@@ -1880,15 +1884,15 @@ class DeformableDetrForObjectDetection(DeformableDetrPreTrainedModel):
         >>> results = feature_extractor.post_process(outputs, target_sizes=target_sizes)[0]
         >>> for score, label, box in zip(results["scores"], results["labels"], results["boxes"]):
         ...     box = [round(i, 2) for i in box.tolist()]
-        ...     # let's only keep detections with score > 0.7
-        ...     if score > 0.7:
+        ...     # let's only keep detections with score > 0.5
+        ...     if score > 0.5:
         ...         print(
         ...             f"Detected {model.config.id2label[label.item()]} with confidence "
         ...             f"{round(score.item(), 3)} at location {box}"
         ...         )
-        Detected cat with confidence 0.856 at location [342.19, 24.3, 640.02, 372.25]
-        Detected remote with confidence 0.739 at location [40.79, 72.78, 176.76, 117.25]
-        Detected cat with confidence 0.859 at location [16.5, 52.84, 318.25, 470.78]
+        Detected cat with confidence 0.8 at location [16.5, 52.84, 318.25, 470.78]
+        Detected cat with confidence 0.789 at location [342.19, 24.3, 640.02, 372.25]
+        Detected remote with confidence 0.633 at location [40.79, 72.78, 176.76, 117.25]
         ```"""
         return_dict = return_dict if return_dict is not None else self.config.use_return_dict
 
