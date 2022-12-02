@@ -19,9 +19,12 @@
 import logging
 import os
 import random
+import json
 import sys
 from dataclasses import dataclass, field
 from typing import Optional
+
+from flatten_dict import flatten, unflatten
 
 import datasets
 import numpy as np
@@ -46,6 +49,11 @@ from transformers.trainer_utils import get_last_checkpoint
 from transformers.utils import check_min_version, send_example_telemetry
 from transformers.utils.versions import require_version
 
+import ray
+from ray import tune
+
+import wandb
+
 
 # Will error if the minimal version of Transformers is not installed. Remove at your own risks.
 check_min_version("4.26.0.dev0")
@@ -65,6 +73,29 @@ task_to_keys = {
 }
 
 logger = logging.getLogger(__name__)
+
+# Blacklisted entries in a hyperparameter space config file
+BLACKLISTED_HP = [
+    "model_name_or_path",
+    "task_name",
+    "dataset_name",
+    "dataset_config_name",
+    "max_seq_length",
+    "pad_to_max_length",
+    "overwrite_cache",
+    "max_train_samples",
+    "max_eval_samples",
+    "max_predict_samples",
+    "train_file",
+    "validation_file",
+    "test_file",
+    "config_name", 
+    "tokenizer_name", 
+    "cache_dir", 
+    "use_fast_tokenizer", 
+    "use_auth_token", 
+    "ignore_mismatched_sizes"
+]
 
 
 @dataclass
@@ -203,18 +234,69 @@ class ModelArguments:
     )
 
 
+@dataclass
+class HyperparameterSearchArguments:
+    do_hp_search: bool = field(
+        default=False,
+        metadata={
+            "help": "State if you wan't to do a hyperparameter search."
+        }
+    )
+    hp_space_config_path: str = field(
+        default="hp_space_config.json",
+        metadata={
+            "help": "This is a path to a hyperparameter config file."
+        }
+    )
+    hp_search_direction: str = field(
+        default="maximize",
+        metadata={
+            "help": (
+                "A direction to optimize a objective in."
+                " This can be 'maximize' or 'minimize'."
+            )
+        }
+    )
+    hp_search_n_trials: int = field(
+        default=10,
+        metadata={
+            "help": "The number of trial runs for this hyperparameter search."
+        }
+    )
+    hp_search_backend: str = field(
+        default="ray",
+        metadata={
+            "help": (
+                "A identified for a hyperparameter search backend."
+                " Possible values are 'ray', 'wandb', 'optuna' or 'sigopt'."
+            )
+        }
+    )
+    hp_search_name: Optional[str] = field(
+        default=None,
+        metadata={
+            "help": "The name of the current hyperparameter search."
+        }
+    )
+
+
 def main():
     # See all possible arguments in src/transformers/training_args.py
     # or by passing the --help flag to this script.
     # We now keep distinct sets of args, for a cleaner separation of concerns.
 
-    parser = HfArgumentParser((ModelArguments, DataTrainingArguments, TrainingArguments))
+    parser = HfArgumentParser((
+        ModelArguments, 
+        DataTrainingArguments, 
+        HyperparameterSearchArguments, 
+        TrainingArguments
+    ))
     if len(sys.argv) == 2 and sys.argv[1].endswith(".json"):
         # If we pass only one argument to the script and it's the path to a json file,
         # let's parse it to get our arguments.
-        model_args, data_args, training_args = parser.parse_json_file(json_file=os.path.abspath(sys.argv[1]))
+        model_args, data_args, hp_args, training_args = parser.parse_json_file(json_file=os.path.abspath(sys.argv[1]))
     else:
-        model_args, data_args, training_args = parser.parse_args_into_dataclasses()
+        model_args, data_args, hp_args, training_args = parser.parse_args_into_dataclasses()
 
     # Sending telemetry. Tracking the example usage helps us better allocate resources to maintain them. The
     # information sent is the one passed as arguments along with your Python/PyTorch versions.
@@ -254,6 +336,26 @@ def main():
             logger.info(
                 f"Checkpoint detected, resuming training at {last_checkpoint}. To avoid this behavior, change "
                 "the `--output_dir` or add `--overwrite_output_dir` to train from scratch."
+            )
+
+    if hp_args.do_hp_search:
+        with open(hp_args.hp_space_config_path, "r", encoding="utf-8") as f:
+            hp_space = json.load(f)
+        hp_space = flatten(hp_space)
+        for key, value in hp_space.items():
+            try:
+                hp_space[key] = eval(value)
+            except Exception as e:
+                logger.info(
+                    f"{e.__class__.__name__}: {str(e)}"
+                    f" During the eval of the string '{value}'"
+                    " when trying to build the `hp_search_config`."
+                    " This message is purely informative."
+                )
+        hp_space = unflatten(hp_space)
+        if any([i in BLACKLISTED_HP for i in hp_space.keys()]):
+            raise ValueError(
+                f"One of the hyperparameter space keys is blacklisted in the list {BLACKLISTED_HP}."
             )
 
     # Set seed before initializing model.
@@ -366,15 +468,17 @@ def main():
         revision=model_args.model_revision,
         use_auth_token=True if model_args.use_auth_token else None,
     )
-    model = AutoModelForSequenceClassification.from_pretrained(
-        model_args.model_name_or_path,
-        from_tf=bool(".ckpt" in model_args.model_name_or_path),
-        config=config,
-        cache_dir=model_args.cache_dir,
-        revision=model_args.model_revision,
-        use_auth_token=True if model_args.use_auth_token else None,
-        ignore_mismatched_sizes=model_args.ignore_mismatched_sizes,
-    )
+    def model_init(trial):
+        return AutoModelForSequenceClassification.from_pretrained(
+            model_args.model_name_or_path,
+            from_tf=bool(".ckpt" in model_args.model_name_or_path),
+            config=config,
+            cache_dir=model_args.cache_dir,
+            revision=model_args.model_revision,
+            use_auth_token=True if model_args.use_auth_token else None,
+            ignore_mismatched_sizes=model_args.ignore_mismatched_sizes,
+        )
+    model = model_init(None)
 
     # Preprocessing the raw_datasets
     if data_args.task_name is not None:
@@ -511,17 +615,33 @@ def main():
 
     # Initialize our Trainer
     trainer = Trainer(
-        model=model,
+        model=model if not hp_args.do_hp_search else None,
         args=training_args,
         train_dataset=train_dataset if training_args.do_train else None,
         eval_dataset=eval_dataset if training_args.do_eval else None,
         compute_metrics=compute_metrics,
         tokenizer=tokenizer,
+        model_init=None if not hp_args.do_hp_search else model_init,
         data_collator=data_collator,
     )
 
+    if hp_args.do_hp_search:
+        best_run = trainer.hyperparameter_search(
+            hp_space=hp_space,
+            n_trials=hp_args.hp_search_n_trials,
+            direction=hp_args.hp_search_direction,
+            backend=hp_args.hp_search_backend,
+            hp_search_name=hp_args.hp_search_name
+        )
+        logger.info(
+            "Finished hyperparameter search. This was the best run:\n"
+            f"\trun_id: {best_run.run_id}\n"
+            f"\tobjective: {str(best_run.objective)}\n"
+            f"\thyperparameters: {json.dumps(best_run.hyperparameters)}"
+        )
+
     # Training
-    if training_args.do_train:
+    if training_args.do_train and not hp_args.do_hp_search:
         checkpoint = None
         if training_args.resume_from_checkpoint is not None:
             checkpoint = training_args.resume_from_checkpoint
