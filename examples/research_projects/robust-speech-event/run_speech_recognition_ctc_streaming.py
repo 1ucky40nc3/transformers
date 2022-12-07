@@ -460,7 +460,7 @@ def main():
         for split, dataset in raw_datasets.items():
             raw_datasets[split] = dataset.map(
                 remove_special_characters,
-            ).remove_columns([text_column_name])
+            )#.remove_columns([text_column_name])
 
     # 3. Next, let's load the config as we might need it to create
     # the tokenizer
