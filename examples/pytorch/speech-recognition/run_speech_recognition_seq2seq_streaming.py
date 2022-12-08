@@ -481,13 +481,12 @@ def main():
     with training_args.main_process_first(desc="dataset map pre-processing"):
         for split, dataset in raw_datasets.items():
             vectorized_datasets[split] = (
-                dataset.map(
-                    prepare_dataset,
-                    remove_columns=raw_column_names[split] + ["target_text"],
-                ).filter(
+                dataset.map(prepare_dataset)
+                .filter(
                     is_audio_in_length_range,
                     input_columns=["input_length"],
-                ).with_format("torch")
+                )
+                .with_format("torch")
             )
             if split == "train":
                 vectorized_datasets[split] = vectorized_datasets[split].shuffle(
