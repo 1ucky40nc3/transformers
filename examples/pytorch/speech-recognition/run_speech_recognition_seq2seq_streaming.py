@@ -483,7 +483,6 @@ def main():
             vectorized_datasets[split] = dataset.map(
                 prepare_dataset,
                 remove_columns=raw_column_names[split] + ["target_text"],
-                num_proc=data_args.preprocessing_num_workers,
                 desc="preprocess train dataset",
             ).filter(
                 is_audio_in_length_range,
