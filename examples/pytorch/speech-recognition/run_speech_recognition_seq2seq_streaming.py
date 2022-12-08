@@ -370,7 +370,7 @@ def main():
             path=data_args.dataset_name,
             name=data_args.dataset_config_name,
             split=data_args.train_split_name,
-            use_auth_token=data_args.use_auth_token,
+            use_auth_token=model_args.use_auth_token,
             streaming=True,
             sampling_rate=feature_extractor.sampling_rate,
         )
@@ -395,7 +395,7 @@ def main():
             path=data_args.dataset_name,
             name=data_args.dataset_config_name,
             split=data_args.eval_split_name,
-            use_auth_token=data_args.use_auth_token,
+            use_auth_token=model_args.use_auth_token,
             streaming=True,
             sampling_rate=feature_extractor.sampling_rate,
         )
