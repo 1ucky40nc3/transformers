@@ -121,6 +121,12 @@ class ModelArguments:
     suppress_tokens: List[int] = field(
         default=None, metadata={"help": "A list of tokens that will be suppressed at generation."}
     )
+    use_cache: bool = field(
+        default=False,
+        metadata={
+            "help": "Wether to use caching. Is not compatible with gradient checkpointing."
+        }
+    )
 
 
 @dataclass
@@ -383,7 +389,11 @@ def main():
         revision=model_args.model_revision,
         use_auth_token=True if model_args.use_auth_token else None,
     )
-    config.update({"forced_decoder_ids": model_args.forced_decoder_ids, "suppress_tokens": model_args.suppress_tokens})
+    config.update({
+        "forced_decoder_ids": model_args.forced_decoder_ids, 
+        "suppress_tokens": model_args.suppress_tokens,
+        "use_cache": model_args.use_cache    
+    })
 
     feature_extractor = AutoFeatureExtractor.from_pretrained(
         model_args.feature_extractor_name if model_args.feature_extractor_name else model_args.model_name_or_path,
