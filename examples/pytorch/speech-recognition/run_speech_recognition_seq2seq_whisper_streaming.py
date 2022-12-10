@@ -350,18 +350,18 @@ def main():
             streaming=True,
         )
 
-        if data_args.audio_column_name not in next(iter(raw_datasets.values())).column_names:
+        if data_args.audio_column_name not in next(iter(raw_datasets.values())).features:
             raise ValueError(
                 f"--audio_column_name '{data_args.audio_column_name}' not found in dataset '{data_args.dataset_name}'. "
                 "Make sure to set `--audio_column_name` to the correct audio column - one of "
-                f"{', '.join(next(iter(raw_datasets.values())).column_names)}."
+                f"{', '.join(next(iter(raw_datasets.values())).features)}."
             )
 
-        if data_args.text_column_name not in next(iter(raw_datasets.values())).column_names:
+        if data_args.text_column_name not in next(iter(raw_datasets.values())).features:
             raise ValueError(
                 f"--text_column_name {data_args.text_column_name} not found in dataset '{data_args.dataset_name}'. "
                 "Make sure to set `--text_column_name` to the correct text column - one of "
-                f"{', '.join(next(iter(raw_datasets.values())).column_names)}."
+                f"{', '.join(next(iter(raw_datasets.values())).features)}."
             )
 
     if training_args.do_eval:
