@@ -327,81 +327,53 @@ def main():
 
     # 4. Load dataset
     raw_datasets = IterableDatasetDict()
-    raw_column_names = {}
 
-    def load_streaming_dataset(split, sampling_rate, **kwargs):
+    def load_streaming_dataset(split, **kwargs):
         if "+" in split:
             dataset_splits = [
                 load_dataset(split=split_name, **kwargs) 
                 for split_name in split.split("+")
             ]
-            # `features` and `cast_column` won't be available after interleaving, so we'll use them here
-            features = dataset_splits[0].features
-            # make sure that the dataset decodes audio with a correct sampling rate
-            dataset_splits = [
-                dataset.cast_column(
-                    data_args.audio_column_name, 
-                    datasets.features.Audio(sampling_rate=sampling_rate)
-                )
-                for dataset in dataset_splits
-            ]
 
             interleaved_dataset = interleave_datasets(dataset_splits)
-            return interleaved_dataset, features
+            return interleaved_dataset
         else:
             dataset = load_dataset(split=split, **kwargs)
-            features = dataset.features
-            # make sure that the dataset decodes audio with a correct sampling rate
-            dataset = dataset.cast_column(
-                data_args.audio_column_name, 
-                datasets.features.Audio(sampling_rate=sampling_rate)
-            )
-            return dataset, features
-    
-    feature_extractor = AutoFeatureExtractor.from_pretrained(
-        model_args.feature_extractor_name if model_args.feature_extractor_name else model_args.model_name_or_path,
-        cache_dir=model_args.cache_dir,
-        revision=model_args.model_revision,
-        use_auth_token=True if model_args.use_auth_token else None,
-    )
+            return dataset
 
     if training_args.do_train:
-        raw_datasets["train"], train_features = load_streaming_dataset(
+        raw_datasets["train"] = load_streaming_dataset(
             path=data_args.dataset_name,
             name=data_args.dataset_config_name,
             split=data_args.train_split_name,
             use_auth_token=model_args.use_auth_token,
             streaming=True,
-            sampling_rate=feature_extractor.sampling_rate,
         )
-        raw_column_names["train"] = list(train_features.keys())
 
-        if data_args.audio_column_name not in raw_column_names["train"]:
+        if data_args.audio_column_name not in next(iter(raw_datasets.values())).column_names:
             raise ValueError(
                 f"--audio_column_name '{data_args.audio_column_name}' not found in dataset '{data_args.dataset_name}'. "
                 "Make sure to set `--audio_column_name` to the correct audio column - one of "
-                f"{', '.join(raw_column_names['train'])}."
+                f"{', '.join(next(iter(raw_datasets.values())).column_names)}."
             )
 
-        if data_args.text_column_name not in raw_column_names["train"]:
+        if data_args.text_column_name not in next(iter(raw_datasets.values())).column_names:
             raise ValueError(
                 f"--text_column_name {data_args.text_column_name} not found in dataset '{data_args.dataset_name}'. "
                 "Make sure to set `--text_column_name` to the correct text column - one of "
-                f"{', '.join(raw_column_names['train'])}."
+                f"{', '.join(next(iter(raw_datasets.values())).column_names)}."
             )
 
     if training_args.do_eval:
-        raw_datasets["eval"], eval_features = load_streaming_dataset(
+        raw_datasets["eval"] = load_streaming_dataset(
             path=data_args.dataset_name,
             name=data_args.dataset_config_name,
             split=data_args.eval_split_name,
             use_auth_token=model_args.use_auth_token,
             streaming=True,
-            sampling_rate=feature_extractor.sampling_rate,
         )
-        raw_column_names["eval"] = list(eval_features.keys())
 
-    # 5. Load pretrained model, tokenizer, and feature extractor
+    # 5. Load pretrained model, tokenizer and feature extractor
     #
     # Distributed training:
     # The .from_pretrained methods guarantee that only one local process can concurrently
@@ -411,9 +383,14 @@ def main():
         revision=model_args.model_revision,
         use_auth_token=True if model_args.use_auth_token else None,
     )
-
     config.update({"forced_decoder_ids": model_args.forced_decoder_ids, "suppress_tokens": model_args.suppress_tokens})
 
+    feature_extractor = AutoFeatureExtractor.from_pretrained(
+        model_args.feature_extractor_name if model_args.feature_extractor_name else model_args.model_name_or_path,
+        cache_dir=model_args.cache_dir,
+        revision=model_args.model_revision,
+        use_auth_token=True if model_args.use_auth_token else None,
+    )
     tokenizer = AutoTokenizer.from_pretrained(
         model_args.tokenizer_name if model_args.tokenizer_name else model_args.model_name_or_path,
         cache_dir=model_args.cache_dir,
@@ -443,6 +420,16 @@ def main():
         # We only need to set the task id when the language is specified (i.e. in a multilingual setting)
         tokenizer.set_prefix_tokens(language=data_args.language, task=data_args.task)
 
+    # 6. Resample speech dataset if necessary
+    dataset_sampling_rate = next(iter(raw_datasets.values())).features[data_args.audio_column_name].sampling_rate
+    if dataset_sampling_rate != feature_extractor.sampling_rate:
+        raw_datasets = raw_datasets.cast_column(
+            data_args.audio_column_name, 
+            datasets.features.Audio(
+                sampling_rate=feature_extractor.sampling_rate
+            )
+        )
+
     # 7. Preprocessing the datasets.
     # We need to read the audio files as arrays and tokenize the targets.
     max_input_length = data_args.max_duration_in_seconds * feature_extractor.sampling_rate
@@ -462,13 +449,18 @@ def main():
     def prepare_dataset(batch):
         # process audio
         sample = batch[audio_column_name]
-        inputs = feature_extractor(sample["array"], sampling_rate=sample["sampling_rate"])
+        inputs = feature_extractor(
+            sample["array"], 
+            sampling_rate=sample["sampling_rate"]
+        )
         # process audio length
         batch[model_input_name] = inputs.get(model_input_name)[0]
         batch["input_length"] = len(sample["array"])
 
         # process targets
-        input_str = batch[text_column_name].lower() if do_lower_case else batch[text_column_name]
+        input_str = batch[text_column_name]
+        if do_lower_case:
+            input_str = input_str.lower()
         batch["labels"] = tokenizer(input_str).input_ids
         return batch
 
@@ -481,17 +473,23 @@ def main():
     with training_args.main_process_first(desc="dataset map pre-processing"):
         for split, dataset in raw_datasets.items():
             vectorized_datasets[split] = (
-                dataset.map(prepare_dataset)
-                .filter(
-                    is_audio_in_length_range,
-                    input_columns=["input_length"],
+                dataset.map(
+                    prepare_dataset,
+                    remove_columns=list(next(iter(raw_datasets.values())).features)
                 )
                 .with_format("torch")
+
             )
             if split == "train":
-                vectorized_datasets[split] = vectorized_datasets[split].shuffle(
-                    buffer_size=data_args.shuffle_buffer_size,
-                    seed=training_args.seed,
+                vectorized_datasets[split] = (
+                    vectorized_datasets[split].shuffle(
+                        buffer_size=data_args.shuffle_buffer_size,
+                        seed=training_args.seed,
+                    )
+                    .filter(
+                        is_audio_in_length_range,
+                        input_columns=["input_length"],
+                    )
                 )
 
     # 8. Load Metric
